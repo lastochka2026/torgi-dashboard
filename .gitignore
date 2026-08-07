@@ -1,0 +1,10 @@
+# Секретные ключи
+credentials.json
+*.json
+
+# Python
+__pycache__/
+*.pyc
+
+# Excel-файлы (если не хотите хранить)
+*.xlsx
