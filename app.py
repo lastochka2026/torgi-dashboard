@@ -47,6 +47,8 @@ CONTRAGENTS = {
 @st.cache_data(ttl=600)
 def load_data():
     try:
+        st.write("Ключи секретов:", st.secrets.keys())   # <--- добавьте эту строку
+        if "google" in st.secrets:
         # Проверяем, доступны ли секреты Streamlit (для облака)
         if "google" in st.secrets:
             creds_dict = dict(st.secrets["google"])
