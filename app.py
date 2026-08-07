@@ -6,7 +6,7 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 import os
 
-# --- Новые импорты для Google Sheets ---
+# --- Импорты для Google Sheets ---
 import gspread
 from gspread_dataframe import get_as_dataframe
 
@@ -14,7 +14,7 @@ st.set_page_config(page_title="Анализ торгов", layout="wide")
 
 # --- Конфигурация Google Sheets ---
 SPREADSHEET_ID = "1wp4xdCGLda308NeM6RLAX4sFURxvbS3f39jOtWm9m0M"
-SHEET_NAME = "Результаты"
+SHEET_NAME = "Результаты"   # Убедитесь, что лист в таблице называется именно так
 
 # Словарь контрагентов и их РЦ (без изменений)
 CONTRAGENTS = {
@@ -43,13 +43,13 @@ CONTRAGENTS = {
     ]
 }
 
-# --- Функция загрузки данных из Google Sheets ---
+# --- Функция загрузки данных из Google Sheets (исправленная) ---
 @st.cache_data(ttl=600)
 def load_data():
     try:
-        st.write("Ключи секретов:", st.secrets.keys())   # <--- добавьте эту строку
-        if "google" in st.secrets:
-        # Проверяем, доступны ли секреты Streamlit (для облака)
+        # Отладочный вывод – посмотрим, какие ключи есть в секретах
+        st.write("🔑 Ключи секретов:", st.secrets.keys())
+        
         if "google" in st.secrets:
             creds_dict = dict(st.secrets["google"])
             creds = gspread.service_account_from_dict(creds_dict)
@@ -59,7 +59,7 @@ def load_data():
                 from oauth2client.service_account import ServiceAccountCredentials
                 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
                 creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
-            except:
+            except Exception:
                 st.error("❌ Нет доступа к Google Sheets. Добавьте секреты или файл credentials.json")
                 return pd.DataFrame()
         
@@ -78,7 +78,7 @@ def load_data():
             st.warning("В таблице нет колонки PLU")
             return pd.DataFrame()
         
-        # --- Дальше идёт ваша оригинальная обработка (без изменений) ---
+        # --- Обработка периода и типа торгов ---
         def parse_period(period_str):
             if pd.isna(period_str):
                 return None, None, None
@@ -106,6 +106,7 @@ def load_data():
                 return "Основные"
         df["Тип торгов"] = df["Длительность"].apply(get_trade_type)
 
+        # Цена последнего этапа
         price_cols = ["Цена (этап 1)", "Цена (этап 2)", "Цена (этап 3)", "Цена (этап 4)"]
         existing_price_cols = [col for col in price_cols if col in df.columns]
         if existing_price_cols:
@@ -120,6 +121,7 @@ def load_data():
         else:
             df["Цена последнего этапа"] = None
 
+        # Цена выигранного (если есть выигранный объём)
         if "Объем выигранный" in df.columns:
             df["Цена выигранного"] = df.apply(
                 lambda row: row["Цена последнего этапа"] if pd.notna(row.get("Объем выигранный")) else None,
@@ -134,7 +136,7 @@ def load_data():
         st.error(f"❌ Ошибка загрузки из Google Sheets: {e}")
         return pd.DataFrame()
 
-# --- Остальная часть app.py без изменений (кроме имени функции load_data) ---
+# --- Основная функция ---
 def main():
     st.title("📊 Анализ торгов")
     df = load_data()
