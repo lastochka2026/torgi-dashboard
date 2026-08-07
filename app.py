@@ -6,7 +6,6 @@ from plotly.subplots import make_subplots
 from datetime import datetime
 import os
 
-# --- Импорты для Google Sheets ---
 import gspread
 from gspread_dataframe import get_as_dataframe
 from oauth2client.service_account import ServiceAccountCredentials
@@ -15,9 +14,9 @@ st.set_page_config(page_title="Анализ торгов", layout="wide")
 
 # --- Конфигурация Google Sheets ---
 SPREADSHEET_ID = "1wp4xdCGLda308NeM6RLAX4sFURxvbS3f39jOtWm9m0M"
-SHEET_NAME = "Результаты"   # Убедитесь, что лист в таблице называется именно так
+SHEET_NAME = "Результаты"
 
-# Словарь контрагентов и их РЦ (без изменений)
+# Словарь контрагентов и их РЦ
 CONTRAGENTS = {
     "ТСЧ Чижик": [
         "РЦ Пермь", "РЦ Уфа", "РЦ Екатеринбург", "РЦ Челябинск",
@@ -44,19 +43,15 @@ CONTRAGENTS = {
     ]
 }
 
-# --- Функция загрузки данных из Google Sheets ---
 @st.cache_data(ttl=600)
 def load_data():
     try:
-        # Отладочный вывод ключей секретов
-        st.write("🔑 Ключи секретов:", st.secrets.keys())
-        
         if "google" in st.secrets:
             creds_dict = dict(st.secrets["google"])
             scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scopes=scope)
         else:
-            # Если секретов нет – пробуем локальный файл (для отладки)
+            # Для локальной отладки (если есть файл credentials.json)
             try:
                 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
                 creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
@@ -66,28 +61,16 @@ def load_data():
         
         client = gspread.authorize(creds)
         sheet = client.open_by_key(SPREADSHEET_ID).worksheet(SHEET_NAME)
-        
-        # Отладка: посмотрим, что на листе
-        all_values = sheet.get_all_values()
-        st.write("🔍 Количество строк на листе:", len(all_values))
-        if len(all_values) > 0:
-            st.write("🔍 Первые 3 строки:", all_values[:3])
-        
         df = get_as_dataframe(sheet, evaluate_formulas=True)
-        st.write("📊 Размер df:", df.shape)
-        st.write("📊 Первые 5 строк df:", df.head())
         
         if df.empty:
-            st.warning("Таблица в Google Sheets пуста (DataFrame пуст).")
+            st.warning("Таблица в Google Sheets пуста.")
             return pd.DataFrame()
         
-        # Приводим PLU к строке
         if "PLU" in df.columns:
             df["PLU"] = df["PLU"].astype(str)
-        else:
-            st.warning("В таблице нет колонки PLU. Проверьте заголовки.")
         
-        # --- Обработка периода и типа торгов ---
+        # Обработка периода и типа торгов
         def parse_period(period_str):
             if pd.isna(period_str):
                 return None, None, None
@@ -143,7 +126,6 @@ def load_data():
         st.error(f"❌ Ошибка загрузки из Google Sheets: {e}")
         return pd.DataFrame()
 
-# --- Основная функция (без изменений) ---
 def main():
     st.title("📊 Анализ торгов")
     df = load_data()
@@ -152,7 +134,6 @@ def main():
 
     st.sidebar.header("Фильтры")
 
-    # 1. Дата торгов
     all_dates = pd.to_datetime(df["Дата торгов"], format="%d.%m.%Y", errors="coerce")
     min_date = all_dates.min()
     max_date = all_dates.max()
@@ -168,28 +149,22 @@ def main():
             format="DD.MM.YYYY"
         )
 
-    # 2. Контрагент
     selected_contragent = st.sidebar.selectbox("Контрагент", options=["Все"] + list(CONTRAGENTS.keys()))
     if selected_contragent != "Все":
         allowed_rc = CONTRAGENTS[selected_contragent]
     else:
         allowed_rc = sorted(df["РЦ"].unique())
 
-    # 3. РЦ
     rc_options = sorted([rc for rc in allowed_rc if rc in df["РЦ"].unique()])
     selected_rc = st.sidebar.multiselect("РЦ", options=rc_options, default=rc_options)
 
-    # 4. Тип торгов
     trade_types = df["Тип торгов"].unique()
     selected_trade_types = st.sidebar.multiselect("Тип торгов", options=trade_types, default=trade_types)
 
-    # 5. Поиск по названию товара
     search_term = st.sidebar.text_input("Поиск по названию товара", "")
 
-    # 6. Выигранный объём
     has_win_vol = st.sidebar.selectbox("Выигранный объём", options=["Все", "Есть выигранный", "Нет выигранного"])
 
-    # 7. Чекбоксы вывода
     col1, col2, col3 = st.sidebar.columns(3)
     with col1:
         show_90_100 = st.checkbox("90-100%", value=True)
@@ -199,14 +174,11 @@ def main():
         show_1_49 = st.checkbox("1-49%", value=True)
     show_0 = st.sidebar.checkbox("0%", value=True)
 
-    # 8. Заголовок "Вывод" и текстовый поиск
     st.sidebar.subheader("Вывод")
     search_output = st.sidebar.text_input("Поиск по выводу (текст)", "")
 
-    # Применяем фильтры
     filtered = df.copy()
 
-    # Фильтр по дате
     if isinstance(date_range, tuple) and len(date_range) == 2:
         if date_range[0] and date_range[1]:
             start_dt = pd.to_datetime(date_range[0])
@@ -215,23 +187,17 @@ def main():
             filtered = filtered[(filtered["Дата_торгов_dt"] >= start_dt) & (filtered["Дата_торгов_dt"] <= end_dt)]
             filtered = filtered.drop(columns=["Дата_торгов_dt"])
 
-    # РЦ
     filtered = filtered[filtered["РЦ"].isin(selected_rc)]
-
-    # Тип торгов
     filtered = filtered[filtered["Тип торгов"].isin(selected_trade_types)]
 
-    # Поиск по названию
     if search_term:
         filtered = filtered[filtered["Наименование"].str.contains(search_term, case=False, na=False)]
 
-    # Выигранный объём
     if has_win_vol == "Есть выигранный":
         filtered = filtered[pd.notna(filtered["Объем выигранный"])]
     elif has_win_vol == "Нет выигранного":
         filtered = filtered[pd.isna(filtered["Объем выигранный"])]
 
-    # Фильтр по чекбоксам (категории вывода)
     conditions = []
     if show_90_100:
         conditions.append(filtered["Вывод"].str.contains("✅✅", na=False))
@@ -244,11 +210,9 @@ def main():
     if conditions:
         filtered = filtered[pd.concat(conditions, axis=1).any(axis=1)]
 
-    # Поиск по выводу (текст)
     if search_output:
         filtered = filtered[filtered["Вывод"].str.contains(search_output, case=False, na=False)]
 
-    # ---------- Отображение таблицы ----------
     st.subheader("Отфильтрованные данные")
     display_cols = ["Дата торгов", "Тип торгов", "РЦ", "Наименование", "Объем",
                     "Цена (этап 1)", "Цена последнего этапа", "Цена выигранного",
@@ -266,7 +230,6 @@ def main():
         column_config=column_config
     )
 
-    # ---------- Графики ----------
     col1, col2 = st.columns(2)
 
     with col1:
@@ -285,7 +248,6 @@ def main():
                          title="Распределение объёма по типу торгов")
         st.plotly_chart(fig_pie, use_container_width=True)
 
-    # Доля выигранного объёма по РЦ
     if "Объем выигранный" in filtered.columns:
         st.subheader("Доля выигранного объёма по РЦ")
         vol_rc = filtered.groupby("РЦ").agg({"Объем": "sum", "Объем выигранный": "sum"}).reset_index()
@@ -297,7 +259,6 @@ def main():
     else:
         st.info("Нет данных о выигранном объёме")
 
-    # Сравнение цен
     st.subheader("Сравнение цен (этап 1, последний, выигранная)")
     top_items = filtered.nlargest(10, "Объем")[["Наименование", "Цена (этап 1)", "Цена последнего этапа", "Цена выигранного"]]
     top_melted = top_items.melt(id_vars="Наименование",
@@ -308,7 +269,6 @@ def main():
                        barmode="group", labels={"Цена": "Цена (руб.)"})
     st.plotly_chart(fig_price, use_container_width=True)
 
-    # ---------- ДИНАМИКА ЦЕН С ВЫИГРАННЫМ ОБЪЁМОМ ----------
     if not filtered.empty:
         st.subheader("📈 Динамика цен и выигранный объём по товарам")
         product_options = sorted(filtered["Наименование"].unique())
@@ -326,14 +286,12 @@ def main():
 
             if not dyn_df.empty:
                 fig_dyn = make_subplots(specs=[[{"secondary_y": True}]])
-
                 colors = px.colors.qualitative.Plotly
 
                 for i, product in enumerate(selected_products):
                     prod_data = dyn_df[dyn_df["Наименование"] == product]
                     color = colors[i % len(colors)]
 
-                    # Цена этапа 1 (пунктир)
                     fig_dyn.add_trace(
                         go.Scatter(
                             x=prod_data["Дата_торгов_dt"],
@@ -348,7 +306,6 @@ def main():
                         secondary_y=False
                     )
 
-                    # Последняя цена (сплошная)
                     fig_dyn.add_trace(
                         go.Scatter(
                             x=prod_data["Дата_торгов_dt"],
@@ -363,7 +320,6 @@ def main():
                         secondary_y=False
                     )
 
-                    # Выигранный объём (столбцы, правая ось)
                     win_vol = prod_data["Объем выигранный"].fillna(0)
                     fig_dyn.add_trace(
                         go.Bar(
@@ -393,7 +349,6 @@ def main():
         else:
             st.info("Выберите хотя бы один товар для отображения динамики.")
 
-    # ---------- Статистика по выводу ----------
     st.subheader("📊 Распределение по выводу")
     if "Вывод" in filtered.columns and not filtered.empty:
         def extract_category(text):
