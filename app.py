@@ -222,8 +222,6 @@ def main():
     column_config = {}
     if "Вывод" in display_cols:
         column_config["Вывод"] = st.column_config.TextColumn(width="large")
-    if "РЦ" in display_cols:
-        column_config["РЦ"] = st.column_config.TextColumn(width="small")
 
     st.dataframe(
         filtered[display_cols],
