@@ -230,97 +230,153 @@ def main():
         column_config=column_config
     )
 
-    col1, col2 = st.columns(2)
+       col1, col2 = st.columns(2)
 
     with col1:
-        # ---- График: Общий объём с разбивкой на выигранный и невыигранный (stacked) ----
+        # ---- График 1: Общий и выигранный объём суммарно (групповой) ----
         if "Объем выигранный" in filtered.columns:
-            # Создаём копию данных для группировки
-            plot_data = filtered.copy()
-            
-            # Добавляем колонку "Невыигранный" = Объем - Объем выигранный (заменяем NA на 0)
-            plot_data["Невыигранный"] = plot_data["Объем"] - plot_data["Объем выигранный"].fillna(0)
-            
-            # Группируем по РЦ: суммируем общий объём (для справки), но для стека нужно разбить по категориям
-            # Создаём три категории: Невыигранный, и каждый товар (выигранный)
-            # Для этого нужно собрать данные в формате: РЦ, Категория, Объём
-            
-            # Сначала выделим выигранные строки
-            won_rows = plot_data[plot_data["Объем выигранный"].notna() & (plot_data["Объем выигранный"] > 0)]
-            # Невыигранные строки – все остальные (или с нулевым выигрышем)
-            non_won_rows = plot_data[(plot_data["Объем выигранный"].isna()) | (plot_data["Объем выигранный"] == 0)]
-            
-            # Для стекового графика нам нужен длинный формат: РЦ, Категория, Объём
-            # Категории: "Невыигранный" и названия товаров (только для выигранных)
-            
-            # Группируем невыигранные объёмы по РЦ
-            if not non_won_rows.empty:
-                non_won_agg = non_won_rows.groupby("РЦ")["Невыигранный"].sum().reset_index()
-                non_won_agg["Категория"] = "Невыигранный"
-                non_won_agg = non_won_agg.rename(columns={"Невыигранный": "Объём"})
-            else:
-                non_won_agg = pd.DataFrame(columns=["РЦ", "Категория", "Объём"])
-            
-            # Группируем выигранные объёмы по РЦ и товару
-            if not won_rows.empty:
-                won_agg = won_rows.groupby(["РЦ", "Наименование"], as_index=False)["Объем выигранный"].sum()
-                won_agg = won_agg.rename(columns={"Наименование": "Категория", "Объем выигранный": "Объём"})
-            else:
-                won_agg = pd.DataFrame(columns=["РЦ", "Категория", "Объём"])
-            
-            # Объединяем
-            plot_df = pd.concat([non_won_agg, won_agg], ignore_index=True)
-            
-            # Упорядочиваем категории: сначала "Невыигранный", затем товары по убыванию объёма
-            # Чтобы серый был внизу, а цветные – сверху
-            # В стеке порядок определяется порядком в данных – снизу вверх, поэтому лучше сначала "Невыигранный", потом товары
-            # Но товары должны быть отсортированы по убыванию, чтобы большие сегменты были снизу среди цветных
-            # Мы отсортируем так: сначала "Невыигранный", затем товары по убыванию объёма в рамках каждого РЦ? Но это сложно.
-            # Проще оставить как есть – порядок не критичен.
-            
-            # Строим стековый график
-            fig_stack = px.bar(plot_df, 
-                               x="РЦ", 
-                               y="Объём", 
-                               color="Категория",
-                               title="Общий объём по РЦ (невыигранный + выигранный по товарам)",
-                               barmode="stack",
-                               labels={"Объём": "Объём (кг)"},
-                               color_discrete_map={"Невыигранный": "#D3D3D3"})  # светло-серый для невыигранного
-            
-            # Для товаров цвета назначаются автоматически
-            st.plotly_chart(fig_stack, use_container_width=True)
-            
-            # Легенда – она уже есть в графике
+            vol_by_rc = filtered.groupby("РЦ").agg({"Объем": "sum", "Объем выигранный": "sum"}).reset_index()
+            fig_vol = px.bar(vol_by_rc, x="РЦ", y=["Объем", "Объем выигранный"],
+                             title="Общий и выигранный объём по РЦ",
+                             barmode="group", labels={"value": "Объём (кг)", "variable": "Тип"})
+            st.plotly_chart(fig_vol, use_container_width=True)
         else:
             st.info("Нет данных о выигранном объёме")
 
     with col2:
-        # ---- Список выигранных товаров по РЦ (таблица с цветами) ----
+        # ---- График 2: Разбивка выигранного объёма по товарам (stacked bar) ----
         if "Объем выигранный" in filtered.columns:
             won_df = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
             if not won_df.empty:
                 # Группируем по РЦ и товару
                 won_by_rc_item = won_df.groupby(["РЦ", "Наименование"], as_index=False)["Объем выигранный"].sum()
-                # Сортируем по РЦ и убыванию объёма
                 won_by_rc_item = won_by_rc_item.sort_values(["РЦ", "Объем выигранный"], ascending=[True, False])
-                # Преобразуем в сводную таблицу: строки – РЦ, колонки – товары, значения – объём
-                pivot = won_by_rc_item.pivot(index="РЦ", columns="Наименование", values="Объем выигранный").fillna(0)
-                # Покажем эту таблицу в виде цветной таблицы? 
-                # Лучше просто показать список товаров с цветами, как вы просили – справа список.
-                # Можно сделать две колонки: "РЦ" и "Товары (объём)".
-                # Сгруппируем товары в строку для каждого РЦ
-                grouped = won_by_rc_item.groupby("РЦ").apply(
-                    lambda x: ", ".join([f"{row['Наименование']} ({row['Объем выигранный']:.0f} кг)" 
-                                         for _, row in x.iterrows()])
-                ).reset_index(name="Выигранные товары")
                 
-                st.subheader("📦 Выигранные товары по РЦ")
-                st.dataframe(grouped, use_container_width=True, hide_index=True)
+                fig_won_items = px.bar(won_by_rc_item, 
+                                       x="РЦ", 
+                                       y="Объем выигранный", 
+                                       color="Наименование",
+                                       title="Выигранный объём по товарам (по РЦ)",
+                                       barmode="stack",
+                                       labels={"Объем выигранный": "Выигранный объём (кг)"})
+                st.plotly_chart(fig_won_items, use_container_width=True)
+                
+                # ---- Таблица-легенда с товарами и цветами ----
+                st.subheader("🎨 Цвета товаров в графике")
+                # Получаем уникальные товары и их цвета из графика
+                colors = fig_won_items.data
+                legend_data = []
+                for trace in colors:
+                    legend_data.append({
+                        "Товар": trace.name,
+                        "Цвет": trace.marker.color if hasattr(trace.marker, 'color') else "неизвестно"
+                    })
+                if legend_data:
+                    legend_df = pd.DataFrame(legend_data)
+                    # Отображаем таблицу с цветными индикаторами (используем styled DataFrame)
+                    st.dataframe(
+                        legend_df,
+                        column_config={
+                            "Цвет": st.column_config.ColorColumn("Цвет"),
+                            "Товар": st.column_config.TextColumn("Товар")
+                        },
+                        hide_index=True,
+                        use_container_width=True
+                    )
             else:
-                st.info("Нет выигранных позиций.")
+                st.info("Нет выигранных позиций для отображения по товарам.")
         else:
             st.info("Нет данных о выигранном объёме")
+
+    st.subheader("Сравнение цен (этап 1, последний, выигранная)")
+    top_items = filtered.nlargest(10, "Объем")[["Наименование", "Цена (этап 1)", "Цена последнего этапа", "Цена выигранного"]]
+    top_melted = top_items.melt(id_vars="Наименование",
+                                value_vars=["Цена (этап 1)", "Цена последнего этапа", "Цена выигранного"],
+                                var_name="Тип цены", value_name="Цена")
+    fig_price = px.bar(top_melted, x="Наименование", y="Цена", color="Тип цены",
+                       title="Цены по топ-10 товаров по объёму",
+                       barmode="group", labels={"Цена": "Цена (руб.)"})
+    st.plotly_chart(fig_price, use_container_width=True)
+
+    if not filtered.empty:
+        st.subheader("📈 Динамика цен и выигранный объём по товарам")
+        product_options = sorted(filtered["Наименование"].unique())
+        selected_products = st.multiselect(
+            "Выберите товары для графика",
+            options=product_options,
+            default=product_options[:5] if len(product_options) >= 5 else product_options
+        )
+
+        if selected_products:
+            dyn_df = filtered[filtered["Наименование"].isin(selected_products)].copy()
+            dyn_df["Дата_торгов_dt"] = pd.to_datetime(dyn_df["Дата торгов"], format="%d.%m.%Y", errors="coerce")
+            dyn_df = dyn_df.dropna(subset=["Дата_торгов_dt"])
+            dyn_df = dyn_df.sort_values("Дата_торгов_dt")
+
+            if not dyn_df.empty:
+                fig_dyn = make_subplots(specs=[[{"secondary_y": True}]])
+                colors = px.colors.qualitative.Plotly
+
+                for i, product in enumerate(selected_products):
+                    prod_data = dyn_df[dyn_df["Наименование"] == product]
+                    color = colors[i % len(colors)]
+
+                    fig_dyn.add_trace(
+                        go.Scatter(
+                            x=prod_data["Дата_торгов_dt"],
+                            y=prod_data["Цена (этап 1)"],
+                            mode="lines+markers",
+                            name=f"{product} – этап 1",
+                            line=dict(color=color, dash="dash"),
+                            marker=dict(size=6),
+                            legendgroup=product,
+                            showlegend=True
+                        ),
+                        secondary_y=False
+                    )
+
+                    fig_dyn.add_trace(
+                        go.Scatter(
+                            x=prod_data["Дата_торгов_dt"],
+                            y=prod_data["Цена последнего этапа"],
+                            mode="lines+markers",
+                            name=f"{product} – последняя цена",
+                            line=dict(color=color, dash="solid"),
+                            marker=dict(size=6),
+                            legendgroup=product,
+                            showlegend=True
+                        ),
+                        secondary_y=False
+                    )
+
+                    win_vol = prod_data["Объем выигранный"].fillna(0)
+                    fig_dyn.add_trace(
+                        go.Bar(
+                            x=prod_data["Дата_торгов_dt"],
+                            y=win_vol,
+                            name=f"{product} – выигранный объём",
+                            marker=dict(color=color, opacity=0.4),
+                            legendgroup=product,
+                            showlegend=False,
+                            hovertemplate="%{x|%d.%m.%Y}<br>Выиграно: %{y} кг<extra></extra>"
+                        ),
+                        secondary_y=True
+                    )
+
+                fig_dyn.update_xaxes(title_text="Дата торгов", tickformat="%d.%m.%Y")
+                fig_dyn.update_yaxes(title_text="Цена (руб.)", secondary_y=False)
+                fig_dyn.update_yaxes(title_text="Выигранный объём (кг)", secondary_y=True)
+
+                fig_dyn.update_layout(
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    hovermode="x unified"
+                )
+
+                st.plotly_chart(fig_dyn, use_container_width=True)
+            else:
+                st.info("Нет данных для выбранных товаров.")
+        else:
+            st.info("Выберите хотя бы один товар для отображения динамики.")
 
     st.subheader("📊 Распределение по выводу")
     if "Вывод" in filtered.columns and not filtered.empty:
