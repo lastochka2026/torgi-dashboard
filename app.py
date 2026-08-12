@@ -15,7 +15,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 # MODE = 1  --> стековый график (один столбец: серая часть + цветные сегменты)
 # MODE = 2  --> групповой график (два столбца: синий общий, голубой выигранный) + справа список товаров
 # ==================================================
-MODE = 2   # <-- поменяйте на 2, чтобы попробовать другой вариант
+MODE = 2   # <-- поменяйте на 1, чтобы попробовать другой вариант
 
 st.set_page_config(page_title="Анализ торгов", layout="wide")
 
@@ -230,7 +230,7 @@ def main():
     if "Вывод" in display_cols:
         column_config["Вывод"] = st.column_config.TextColumn(width="large")
     if "РЦ" in display_cols:
-        column_config["РЦ"] = st.column_config.TextColumn(width="medium")  # можно оставить как есть
+        column_config["РЦ"] = st.column_config.TextColumn(width="medium")
 
     st.dataframe(
         filtered[display_cols],
@@ -246,7 +246,6 @@ def main():
         # ----- РЕЖИМ 1: СТЕКОВЫЙ ГРАФИК (серая часть + цветные сегменты) -----
         with col1:
             if "Объем выигранный" in filtered.columns:
-                # Подготовка данных для стекового графика
                 plot_data = filtered.copy()
                 plot_data["Невыигранный"] = plot_data["Объем"] - plot_data["Объем выигранный"].fillna(0)
 
@@ -284,13 +283,11 @@ def main():
                 st.info("Нет данных о выигранном объёме")
 
         with col2:
-            # Список выигранных товаров по РЦ (таблица)
+            # Список выигранных товаров по РЦ
             if "Объем выигранный" in filtered.columns:
                 won_df = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
                 if not won_df.empty:
-                    won_by_rc_item = won_df.groupby(["РЦ", "Наименование"], as_index=False)["Объем выигранный"].sum()
-                    # Сгруппируем товары в строку для каждого РЦ
-                    grouped = won_by_rc_item.groupby("РЦ").apply(
+                    grouped = won_df.groupby("РЦ").apply(
                         lambda x: ", ".join([f"{row['Наименование']} ({row['Объем выигранный']:.0f} кг)" 
                                              for _, row in x.iterrows()])
                     ).reset_index(name="Выигранные товары")
@@ -302,7 +299,7 @@ def main():
                 st.info("Нет данных о выигранном объёме")
 
     else:
-        # ----- РЕЖИМ 2: ГРУППОВОЙ ГРАФИК (синий + голубой) + СПИСОК ТОВАРОВ С ЦВЕТАМИ -----
+        # ----- РЕЖИМ 2: ГРУППОВОЙ ГРАФИК (синий + голубой) + СПИСОК ТОВАРОВ -----
         with col1:
             if "Объем выигранный" in filtered.columns:
                 vol_by_rc = filtered.groupby("РЦ").agg({"Объем": "sum", "Объем выигранный": "sum"}).reset_index()
@@ -314,30 +311,10 @@ def main():
                 st.info("Нет данных о выигранном объёме")
 
         with col2:
-            # Выводим список товаров с цветами (как легенда)
+            # Список выигранных товаров по РЦ
             if "Объем выигранный" in filtered.columns:
                 won_df = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
                 if not won_df.empty:
-                    # Группируем по товару и РЦ (для цветов в легенде)
-                    items = won_df["Наименование"].unique()
-                    # Для каждого товара создадим цвет (используем стандартную палитру)
-                    colors = px.colors.qualitative.Plotly
-                    color_map = {item: colors[i % len(colors)] for i, item in enumerate(items)}
-                    
-                    # Строим маленькую табличку с цветами
-                    legend_data = pd.DataFrame({
-                        "Товар": items,
-                        "Цвет": [color_map[item] for item in items]
-                    })
-                    st.subheader("🎨 Цвета товаров")
-                    st.dataframe(
-                        legend_data,
-                        column_config={"Цвет": st.column_config.ColorColumn("Цвет")},
-                        hide_index=True,
-                        use_container_width=True
-                    )
-                    
-                    # Также покажем, какие товары в каких РЦ выиграны
                     grouped = won_df.groupby("РЦ").apply(
                         lambda x: ", ".join([f"{row['Наименование']} ({row['Объем выигранный']:.0f} кг)" 
                                              for _, row in x.iterrows()])
