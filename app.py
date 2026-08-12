@@ -51,7 +51,6 @@ def load_data():
             scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
             creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scopes=scope)
         else:
-            # Для локальной отладки (если есть файл credentials.json)
             try:
                 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
                 creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
@@ -213,6 +212,7 @@ def main():
     if search_output:
         filtered = filtered[filtered["Вывод"].str.contains(search_output, case=False, na=False)]
 
+    # ---------- Таблица ----------
     st.subheader("Отфильтрованные данные")
     display_cols = ["Дата торгов", "Тип торгов", "РЦ", "Наименование", "Объем",
                     "Цена (этап 1)", "Цена последнего этапа", "Цена выигранного",
@@ -230,9 +230,11 @@ def main():
         column_config=column_config
     )
 
+    # ---------- Графики (две колонки) ----------
     col1, col2 = st.columns(2)
 
     with col1:
+        # Групповой график: общий и выигранный объём суммарно
         if "Объем выигранный" in filtered.columns:
             vol_by_rc = filtered.groupby("РЦ").agg({"Объем": "sum", "Объем выигранный": "sum"}).reset_index()
             fig_vol = px.bar(vol_by_rc, x="РЦ", y=["Объем", "Объем выигранный"],
@@ -243,11 +245,40 @@ def main():
             st.info("Нет данных о выигранном объёме")
 
     with col2:
-        type_vol = filtered.groupby("Тип торгов").agg({"Объем": "sum"}).reset_index()
-        fig_pie = px.pie(type_vol, names="Тип торгов", values="Объем",
-                         title="Распределение объёма по типу торгов")
-        st.plotly_chart(fig_pie, use_container_width=True)
+        # Стековый график: выигранный объём по товарам (каждый товар – свой цвет)
+        if "Объем выигранный" in filtered.columns:
+            won_df = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
+            if not won_df.empty:
+                won_by_rc_item = won_df.groupby(["РЦ", "Наименование"], as_index=False)["Объем выигранный"].sum()
+                # Сортируем для красоты
+                won_by_rc_item = won_by_rc_item.sort_values(["РЦ", "Объем выигранный"], ascending=[True, False])
+                
+                fig_won = px.bar(won_by_rc_item, 
+                                 x="РЦ", 
+                                 y="Объем выигранный", 
+                                 color="Наименование",
+                                 title="Выигранный объём по товарам (по РЦ)",
+                                 barmode="stack",
+                                 labels={"Объем выигранный": "Выигранный объём (кг)"})
+                st.plotly_chart(fig_won, use_container_width=True)
+            else:
+                st.info("Нет выигранных позиций для отображения по товарам.")
+        else:
+            st.info("Нет данных о выигранном объёме")
 
+    # ---------- Круговая диаграмма (на всю ширину, под графиками) ----------
+    st.subheader("Распределение объёма по типу торгов")
+    type_vol = filtered.groupby("Тип торгов").agg({"Объем": "sum"}).reset_index()
+    if not type_vol.empty:
+        fig_pie = px.pie(type_vol, names="Тип торгов", values="Объем",
+                         title="Доля объёма по типу торгов",
+                         hole=0.3)  # можно сделать donut, если нравится
+        st.plotly_chart(fig_pie, use_container_width=True)
+    else:
+        st.info("Нет данных для круговой диаграммы.")
+
+    # ---------- Остальные графики (без изменений) ----------
+    # Доля выигранного объёма по РЦ
     if "Объем выигранный" in filtered.columns:
         st.subheader("Доля выигранного объёма по РЦ")
         vol_rc = filtered.groupby("РЦ").agg({"Объем": "sum", "Объем выигранный": "sum"}).reset_index()
@@ -259,6 +290,7 @@ def main():
     else:
         st.info("Нет данных о выигранном объёме")
 
+    # Сравнение цен (топ-10)
     st.subheader("Сравнение цен (этап 1, последний, выигранная)")
     top_items = filtered.nlargest(10, "Объем")[["Наименование", "Цена (этап 1)", "Цена последнего этапа", "Цена выигранного"]]
     top_melted = top_items.melt(id_vars="Наименование",
@@ -269,6 +301,7 @@ def main():
                        barmode="group", labels={"Цена": "Цена (руб.)"})
     st.plotly_chart(fig_price, use_container_width=True)
 
+    # Динамика цен
     if not filtered.empty:
         st.subheader("📈 Динамика цен и выигранный объём по товарам")
         product_options = sorted(filtered["Наименование"].unique())
@@ -349,6 +382,7 @@ def main():
         else:
             st.info("Выберите хотя бы один товар для отображения динамики.")
 
+    # Статистика по выводу
     st.subheader("📊 Распределение по выводу")
     if "Вывод" in filtered.columns and not filtered.empty:
         def extract_category(text):
