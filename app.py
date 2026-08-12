@@ -234,48 +234,54 @@ def main():
     col1, col2 = st.columns(2)
 
     with col1:
-        # Групповой график: общий и выигранный объём суммарно
+        # СТЕКОВЫЙ ГРАФИК: невыигранный (серый) + выигранные товары (цветные)
         if "Объем выигранный" in filtered.columns:
-            vol_by_rc = filtered.groupby("РЦ").agg({"Объем": "sum", "Объем выигранный": "sum"}).reset_index()
-            fig_vol = px.bar(vol_by_rc, x="РЦ", y=["Объем", "Объем выигранный"],
-                             title="Общий и выигранный объём по РЦ",
-                             barmode="group", labels={"value": "Объём (кг)", "variable": "Тип"})
-            st.plotly_chart(fig_vol, use_container_width=True)
+            plot_data = filtered.copy()
+            plot_data["Невыигранный"] = plot_data["Объем"] - plot_data["Объем выигранный"].fillna(0)
+
+            won_rows = plot_data[plot_data["Объем выигранный"].notna() & (plot_data["Объем выигранный"] > 0)]
+            non_won_rows = plot_data[(plot_data["Объем выигранный"].isna()) | (plot_data["Объем выигранный"] == 0)]
+
+            if not non_won_rows.empty:
+                non_won_agg = non_won_rows.groupby("РЦ")["Невыигранный"].sum().reset_index()
+                non_won_agg["Категория"] = "Невыигранный"
+                non_won_agg = non_won_agg.rename(columns={"Невыигранный": "Объём"})
+            else:
+                non_won_agg = pd.DataFrame(columns=["РЦ", "Категория", "Объём"])
+
+            if not won_rows.empty:
+                won_agg = won_rows.groupby(["РЦ", "Наименование"], as_index=False)["Объем выигранный"].sum()
+                won_agg = won_agg.rename(columns={"Наименование": "Категория", "Объем выигранный": "Объём"})
+            else:
+                won_agg = pd.DataFrame(columns=["РЦ", "Категория", "Объём"])
+
+            plot_df = pd.concat([non_won_agg, won_agg], ignore_index=True)
+
+            if not plot_df.empty:
+                fig_stack = px.bar(plot_df, 
+                                   x="РЦ", 
+                                   y="Объём", 
+                                   color="Категория",
+                                   title="Общий объём по РЦ (невыигранный + выигранный по товарам)",
+                                   barmode="stack",
+                                   labels={"Объём": "Объём (кг)"},
+                                   color_discrete_map={"Невыигранный": "#D3D3D3"})  # серый для невыигранного
+                st.plotly_chart(fig_stack, use_container_width=True)
+            else:
+                st.info("Нет данных для построения графика.")
         else:
             st.info("Нет данных о выигранном объёме")
 
     with col2:
-        # Стековый график: выигранный объём по товарам (каждый товар – свой цвет)
-        if "Объем выигранный" in filtered.columns:
-            won_df = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
-            if not won_df.empty:
-                won_by_rc_item = won_df.groupby(["РЦ", "Наименование"], as_index=False)["Объем выигранный"].sum()
-                # Сортируем для красоты
-                won_by_rc_item = won_by_rc_item.sort_values(["РЦ", "Объем выигранный"], ascending=[True, False])
-                
-                fig_won = px.bar(won_by_rc_item, 
-                                 x="РЦ", 
-                                 y="Объем выигранный", 
-                                 color="Наименование",
-                                 title="Выигранный объём по товарам (по РЦ)",
-                                 barmode="stack",
-                                 labels={"Объем выигранный": "Выигранный объём (кг)"})
-                st.plotly_chart(fig_won, use_container_width=True)
-            else:
-                st.info("Нет выигранных позиций для отображения по товарам.")
+        # Круговая диаграмма: распределение объёма по типу торгов
+        type_vol = filtered.groupby("Тип торгов").agg({"Объем": "sum"}).reset_index()
+        if not type_vol.empty:
+            fig_pie = px.pie(type_vol, names="Тип торгов", values="Объем",
+                             title="Распределение объёма по типу торгов",
+                             hole=0.3)  # можно убрать hole=0.3 для обычного пирога
+            st.plotly_chart(fig_pie, use_container_width=True)
         else:
-            st.info("Нет данных о выигранном объёме")
-
-    # ---------- Круговая диаграмма (на всю ширину, под графиками) ----------
-    st.subheader("Распределение объёма по типу торгов")
-    type_vol = filtered.groupby("Тип торгов").agg({"Объем": "sum"}).reset_index()
-    if not type_vol.empty:
-        fig_pie = px.pie(type_vol, names="Тип торгов", values="Объем",
-                         title="Доля объёма по типу торгов",
-                         hole=0.3)  # можно сделать donut, если нравится
-        st.plotly_chart(fig_pie, use_container_width=True)
-    else:
-        st.info("Нет данных для круговой диаграммы.")
+            st.info("Нет данных для круговой диаграммы.")
 
     # ---------- Остальные графики (без изменений) ----------
     # Доля выигранного объёма по РЦ
