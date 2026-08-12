@@ -230,7 +230,7 @@ def main():
         column_config=column_config
     )
 
-       col1, col2 = st.columns(2)
+        col1, col2 = st.columns(2)
 
     with col1:
         # ---- График 1: Общий и выигранный объём суммарно (групповой) ----
@@ -287,94 +287,6 @@ def main():
                 st.info("Нет выигранных позиций для отображения по товарам.")
         else:
             st.info("Нет данных о выигранном объёме")
-
-    st.subheader("Сравнение цен (этап 1, последний, выигранная)")
-    top_items = filtered.nlargest(10, "Объем")[["Наименование", "Цена (этап 1)", "Цена последнего этапа", "Цена выигранного"]]
-    top_melted = top_items.melt(id_vars="Наименование",
-                                value_vars=["Цена (этап 1)", "Цена последнего этапа", "Цена выигранного"],
-                                var_name="Тип цены", value_name="Цена")
-    fig_price = px.bar(top_melted, x="Наименование", y="Цена", color="Тип цены",
-                       title="Цены по топ-10 товаров по объёму",
-                       barmode="group", labels={"Цена": "Цена (руб.)"})
-    st.plotly_chart(fig_price, use_container_width=True)
-
-    if not filtered.empty:
-        st.subheader("📈 Динамика цен и выигранный объём по товарам")
-        product_options = sorted(filtered["Наименование"].unique())
-        selected_products = st.multiselect(
-            "Выберите товары для графика",
-            options=product_options,
-            default=product_options[:5] if len(product_options) >= 5 else product_options
-        )
-
-        if selected_products:
-            dyn_df = filtered[filtered["Наименование"].isin(selected_products)].copy()
-            dyn_df["Дата_торгов_dt"] = pd.to_datetime(dyn_df["Дата торгов"], format="%d.%m.%Y", errors="coerce")
-            dyn_df = dyn_df.dropna(subset=["Дата_торгов_dt"])
-            dyn_df = dyn_df.sort_values("Дата_торгов_dt")
-
-            if not dyn_df.empty:
-                fig_dyn = make_subplots(specs=[[{"secondary_y": True}]])
-                colors = px.colors.qualitative.Plotly
-
-                for i, product in enumerate(selected_products):
-                    prod_data = dyn_df[dyn_df["Наименование"] == product]
-                    color = colors[i % len(colors)]
-
-                    fig_dyn.add_trace(
-                        go.Scatter(
-                            x=prod_data["Дата_торгов_dt"],
-                            y=prod_data["Цена (этап 1)"],
-                            mode="lines+markers",
-                            name=f"{product} – этап 1",
-                            line=dict(color=color, dash="dash"),
-                            marker=dict(size=6),
-                            legendgroup=product,
-                            showlegend=True
-                        ),
-                        secondary_y=False
-                    )
-
-                    fig_dyn.add_trace(
-                        go.Scatter(
-                            x=prod_data["Дата_торгов_dt"],
-                            y=prod_data["Цена последнего этапа"],
-                            mode="lines+markers",
-                            name=f"{product} – последняя цена",
-                            line=dict(color=color, dash="solid"),
-                            marker=dict(size=6),
-                            legendgroup=product,
-                            showlegend=True
-                        ),
-                        secondary_y=False
-                    )
-
-                    win_vol = prod_data["Объем выигранный"].fillna(0)
-                    fig_dyn.add_trace(
-                        go.Bar(
-                            x=prod_data["Дата_торгов_dt"],
-                            y=win_vol,
-                            name=f"{product} – выигранный объём",
-                            marker=dict(color=color, opacity=0.4),
-                            legendgroup=product,
-                            showlegend=False,
-                            hovertemplate="%{x|%d.%m.%Y}<br>Выиграно: %{y} кг<extra></extra>"
-                        ),
-                        secondary_y=True
-                    )
-
-                fig_dyn.update_xaxes(title_text="Дата торгов", tickformat="%d.%m.%Y")
-                fig_dyn.update_yaxes(title_text="Цена (руб.)", secondary_y=False)
-                fig_dyn.update_yaxes(title_text="Выигранный объём (кг)", secondary_y=True)
-
-                fig_dyn.update_layout(
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                    hovermode="x unified"
-                )
-
-                st.plotly_chart(fig_dyn, use_container_width=True)
-            else:
-                st.info("Нет данных для выбранных товаров.")
         else:
             st.info("Выберите хотя бы один товар для отображения динамики.")
 
