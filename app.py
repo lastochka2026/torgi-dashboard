@@ -287,13 +287,14 @@ def main():
         else:
             st.info("Нет данных для круговой диаграммы.")
 
-    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (с отладкой) ----------
+    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (исправленный тултип) ----------
     st.subheader("📈 Динамика выигранного объёма по датам")
     if "Объем выигранный" in filtered.columns:
         won_over_time = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
         if not won_over_time.empty:
             # Группируем по дате и типу для столбцов
             won_by_date_type = won_over_time.groupby(["Дата торгов", "Тип торгов"], as_index=False)["Объем выигранный"].sum()
+            # Преобразуем дату в datetime для оси X
             won_by_date_type["Дата"] = pd.to_datetime(won_by_date_type["Дата торгов"], format="%d.%m.%Y")
             won_by_date_type = won_by_date_type.sort_values("Дата")
             
@@ -312,43 +313,39 @@ def main():
             # Добавляем сводку в данные (одинаковую для всех типов одной даты)
             won_by_date_type["day_rc"] = won_by_date_type["Дата торгов"].map(day_summary)
             
-            # ----- ОТЛАДКА: выводим таблицу с данными для тултипа -----
-            st.write("🔍 Отладочные данные для тултипа (проверьте, что для одной даты day_rc одинаков для всех типов):")
-            st.dataframe(won_by_date_type[["Дата торгов", "Тип торгов", "Объем выигранный", "day_rc"]])
-            
-            # Строим график
-            all_dates = sorted(won_by_date_type["Дата торгов"].unique(), key=lambda d: datetime.strptime(d, "%d.%m.%Y"))
+            # Строим стековый график с осью X = Дата (datetime)
             fig_daily = px.bar(won_by_date_type, 
-                               x="Дата торгов", 
+                               x="Дата", 
                                y="Объем выигранный", 
                                color="Тип торгов",
                                title="Выигранный объём по дням (с разбивкой по типам)",
-                               labels={"Объем выигранный": "Выигранный объём (кг)"},
+                               labels={"Объем выигранный": "Выигранный объём (кг)", "Дата": "Дата торгов"},
                                barmode="stack",
-                               color_discrete_map={"Дефицит": "#FF6B6B", "Основные": "#4ECDC4"},
-                               category_orders={"Дата торгов": all_dates}
+                               color_discrete_map={"Дефицит": "#FF6B6B", "Основные": "#4ECDC4"}
                                )
+            # Включаем unified hover (один тултип на весь столбец)
             fig_daily.update_layout(hovermode='x unified')
             
             # Передаём общую сводку в customdata
             fig_daily.update_traces(
-                hovertemplate="<b>%{x}</b><br>" +
+                hovertemplate="<b>%{x|%d.%m.%Y}</b><br>" +
                               "Общий объём: %{y:,.0f} кг<br>" +
                               "%{customdata[0]}<extra></extra>",
                 customdata=won_by_date_type[["day_rc"]].values
             )
-            # Подписи
-            total_by_date = won_by_date_type.groupby("Дата торгов")["Объем выигранный"].sum().reset_index()
+            # Подписи над столбцами (суммарный выигранный объём за день)
+            total_by_date = won_by_date_type.groupby("Дата")["Объем выигранный"].sum().reset_index()
             for _, row in total_by_date.iterrows():
                 fig_daily.add_annotation(
-                    x=row["Дата торгов"],
+                    x=row["Дата"],
                     y=row["Объем выигранный"],
                     text=f"{row['Объем выигранный']:.0f} кг",
                     showarrow=False,
                     font=dict(size=10, color="black"),
                     yshift=5
                 )
-            fig_daily.update_xaxes(tickangle=45)
+            # Форматируем ось X для отображения дат в формате дд.мм.гггг
+            fig_daily.update_xaxes(tickformat="%d.%m.%Y", tickangle=45)
             st.plotly_chart(fig_daily, use_container_width=True)
         else:
             st.info("Нет выигранных позиций для отображения динамики по датам.")
