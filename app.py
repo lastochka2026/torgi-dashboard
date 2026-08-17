@@ -292,10 +292,12 @@ def main():
     if "Объем выигранный" in filtered.columns:
         won_over_time = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
         if not won_over_time.empty:
-            # Группируем по дате и типу торгов
+            # Группируем по дате и типу торгов (используем имя "Дата_торгов" для единообразия)
             won_by_date_type = won_over_time.groupby(["Дата торгов", "Тип торгов"], as_index=False)["Объем выигранный"].sum()
+            # Переименуем "Дата торгов" в "Дата_торгов" для единообразия
+            won_by_date_type = won_by_date_type.rename(columns={"Дата торгов": "Дата_торгов"})
             # Преобразуем дату в datetime для сортировки
-            won_by_date_type["Дата"] = pd.to_datetime(won_by_date_type["Дата торгов"], format="%d.%m.%Y")
+            won_by_date_type["Дата"] = pd.to_datetime(won_by_date_type["Дата_торгов"], format="%d.%m.%Y")
             won_by_date_type = won_by_date_type.sort_values("Дата")
             
             # Определяем минимальную и максимальную дату в данных
@@ -318,7 +320,7 @@ def main():
             # Создаём столбец "Тип торгов" для цветовой разбивки
             # Для этого группируем по дате и типу
             won_by_date_type["Тип торгов"] = won_by_date_type["Тип торгов"].fillna("Основные")  # на случай NA
-            # Создаём полный DataFrame с типами
+            # Создаём полный DataFrame с типами (используем Дата_торгов для связи)
             full_with_types = full_df.merge(won_by_date_type[["Дата", "Тип торгов", "Объем выигранный"]], 
                                             on="Дата", how="left", suffixes=("", "_type"))
             # Заполняем NA в типах
@@ -334,13 +336,15 @@ def main():
                 
                 # ---------- ИСПРАВЛЕНИЕ: создаём детали РЦ для каждой даты через merge ----------
                 # Группируем по дате, типу и РЦ (суммируем объём по каждому РЦ для каждого типа)
-                rc_grouped = won_over_time.groupby(["Дата торгов", "Тип торгов", "РЦ"], as_index=False)["Объем выигранный"].sum()
+                # Приводим "Дата торгов" к "Дата_торгов" для единообразия
+                won_over_time_renamed = won_over_time.rename(columns={"Дата торгов": "Дата_торгов"})
+                rc_grouped = won_over_time_renamed.groupby(["Дата_торгов", "Тип торгов", "РЦ"], as_index=False)["Объем выигранный"].sum()
                 # Для каждой даты и типа создаём строку с РЦ
-                rc_details = rc_grouped.groupby(["Дата торгов", "Тип торгов"]).apply(
+                rc_details = rc_grouped.groupby(["Дата_торгов", "Тип торгов"]).apply(
                     lambda x: ", ".join([f"{row['РЦ']}: {row['Объем выигранный']:.0f} кг" for _, row in x.iterrows()])
                 ).reset_index(name="РЦ_детали")
-                # Присоединяем к plot_data по дате и типу
-                plot_data = plot_data.merge(rc_details, on=["Дата торгов", "Тип торгов"], how="left")
+                # Присоединяем к plot_data по дате и типу (у plot_data есть Дата_торгов и Тип торгов)
+                plot_data = plot_data.merge(rc_details, on=["Дата_торгов", "Тип торгов"], how="left")
                 # Заполняем пропуски (если вдруг)
                 plot_data["РЦ_детали"] = plot_data["РЦ_детали"].fillna("")
                 # ---------- КОНЕЦ ИСПРАВЛЕНИЯ ----------
