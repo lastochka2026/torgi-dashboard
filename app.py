@@ -273,52 +273,40 @@ def main():
             st.info("Нет данных о выигранном объёме")
 
     with col2:
-        # Круговая диаграмма: распределение ОБЩЕГО объёма по типу торгов (как было)
-        type_vol = filtered.groupby("Тип торгов")["Объем"].sum().reset_index()
-        if not type_vol.empty:
-            fig_pie = px.pie(type_vol, 
-                             names="Тип торгов", 
-                             values="Объем",
-                             title="Распределение объёма по типу торгов",
-                             hole=0.3)
-            fig_pie.update_traces(texttemplate='%{label}<br>%{percent} (%{value:,.0f} кг)', 
-                                  textposition='inside')
-            st.plotly_chart(fig_pie, use_container_width=True)
+        # Круговая диаграмма: распределение ВЫИГРАННОГО объёма по типу торгов (исправлено!)
+        if "Объем выигранный" in filtered.columns:
+            # Отбираем только строки с положительным выигранным объёмом
+            won_data = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
+            if not won_data.empty:
+                type_vol = won_data.groupby("Тип торгов")["Объем выигранный"].sum().reset_index()
+                fig_pie = px.pie(type_vol, 
+                                 names="Тип торгов", 
+                                 values="Объем выигранный",
+                                 title="Распределение ВЫИГРАННОГО объёма по типу торгов",
+                                 hole=0.3)
+                fig_pie.update_traces(texttemplate='%{label}<br>%{percent} (%{value:,.0f} кг)', 
+                                      textposition='inside')
+                st.plotly_chart(fig_pie, use_container_width=True)
+            else:
+                st.info("Нет выигранных позиций для круговой диаграммы.")
         else:
-            st.info("Нет данных для круговой диаграммы.")
+            st.info("Нет данных о выигранном объёме")
 
-    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (с правильным тултипом по РЦ) ----------
+    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (упрощённая, без дублей) ----------
     st.subheader("📈 Динамика выигранного объёма по датам")
     if "Объем выигранный" in filtered.columns:
         won_over_time = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
         if not won_over_time.empty:
-            # Группируем по дате и типу торгов, суммируем выигранный объём
+            # Группируем по дате и типу торгов
             won_by_date_type = won_over_time.groupby(["Дата торгов", "Тип торгов"], as_index=False)["Объем выигранный"].sum()
             # Преобразуем дату в datetime для сортировки
             won_by_date_type["Дата"] = pd.to_datetime(won_by_date_type["Дата торгов"], format="%d.%m.%Y")
             won_by_date_type = won_by_date_type.sort_values("Дата")
             
-            # Подготавливаем данные для тултипа: для каждой даты собираем строку с РЦ и объёмами
-            # Используем исходные данные won_over_time (не агрегированные по типам)
-            rc_details = {}
-            for date in won_over_time["Дата торгов"].unique():
-                df_day = won_over_time[won_over_time["Дата торгов"] == date]
-                # Группируем по РЦ и типу торгов (чтобы показать и тип, и объём)
-                rc_summary = df_day.groupby(["РЦ", "Тип торгов"], as_index=False)["Объем выигранный"].sum()
-                lines = []
-                for _, row in rc_summary.iterrows():
-                    lines.append(f"{row['РЦ']} ({row['Тип торгов']}): {row['Объем выигранный']:.0f} кг")
-                # Объединяем строки через <br>
-                rc_details[date] = "<br>".join(lines)
-            
-            # Добавляем колонку с деталями РЦ в агрегированный датафрейм (по дате)
-            # Сопоставляем по "Дата торгов" (строковая дата)
-            won_by_date_type["РЦ_детали"] = won_by_date_type["Дата торгов"].map(rc_details)
-            
             # Определяем все уникальные даты в данных (только те, где есть выигранный объём)
             all_dates = sorted(won_by_date_type["Дата торгов"].unique(), key=lambda d: datetime.strptime(d, "%d.%m.%Y"))
             
-            # Строим стековый график
+            # Строим стековый график только по дням с данными
             fig_daily = px.bar(won_by_date_type, 
                                x="Дата торгов", 
                                y="Объем выигранный", 
@@ -329,7 +317,17 @@ def main():
                                color_discrete_map={"Дефицит": "#FF6B6B", "Основные": "#4ECDC4"},
                                category_orders={"Дата торгов": all_dates}
                                )
-            # Добавляем тултип с РЦ (используем customdata)
+            # Добавляем тултип с РЦ
+            rc_details = {}
+            for date in won_over_time["Дата торгов"].unique():
+                df_day = won_over_time[won_over_time["Дата торгов"] == date]
+                rc_summary = df_day.groupby(["РЦ", "Тип торгов"])["Объем выигранный"].sum().reset_index()
+                lines = []
+                for _, row in rc_summary.iterrows():
+                    lines.append(f"{row['РЦ']} ({row['Тип торгов']}): {row['Объем выигранный']:.0f} кг")
+                rc_details[date] = "<br>".join(lines)
+            won_by_date_type["РЦ_детали"] = won_by_date_type["Дата торгов"].map(rc_details)
+            
             fig_daily.update_traces(
                 hovertemplate="<b>%{x}</b><br>" +
                               "Тип: %{color}<br>" +
