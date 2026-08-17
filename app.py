@@ -265,7 +265,7 @@ def main():
                                    title="Общий объём по РЦ (невыигранный + выигранный по товарам)",
                                    barmode="stack",
                                    labels={"Объём": "Объём (кг)"},
-                                   color_discrete_map={"Невыигранный": "#D3D3D3"})  # серый для невыигранного
+                                   color_discrete_map={"Невыигранный": "#D3D3D3"})
                 st.plotly_chart(fig_stack, use_container_width=True)
             else:
                 st.info("Нет данных для построения графика.")
@@ -278,20 +278,27 @@ def main():
         if not type_vol.empty:
             fig_pie = px.pie(type_vol, names="Тип торгов", values="Объем",
                              title="Распределение объёма по типу торгов",
-                             hole=0.3)  # можно убрать hole=0.3 для обычного пирога
+                             hole=0.3)
             st.plotly_chart(fig_pie, use_container_width=True)
         else:
             st.info("Нет данных для круговой диаграммы.")
 
-    # ---------- Остальные графики (без изменений) ----------
-    # Доля выигранного объёма по РЦ
+    # ---------- Остальные графики ----------
+    # Доля выигранного объёма по РЦ (с текстовыми метками)
     if "Объем выигранный" in filtered.columns:
         st.subheader("Доля выигранного объёма по РЦ")
         vol_rc = filtered.groupby("РЦ").agg({"Объем": "sum", "Объем выигранный": "sum"}).reset_index()
         vol_rc["Доля выигранного"] = (vol_rc["Объем выигранный"] / vol_rc["Объем"]) * 100
+        # Создаём текстовые метки с процентом и абсолютным значением
+        vol_rc["text"] = vol_rc.apply(
+            lambda row: f"{row['Доля выигранного']:.1f}%\n{row['Объем выигранный']:.0f} кг", 
+            axis=1
+        )
         fig_donut = px.bar(vol_rc, x="РЦ", y="Доля выигранного",
                            title="% выигранного объёма по РЦ",
-                           labels={"Доля выигранного": "% выигранного"})
+                           labels={"Доля выигранного": "% выигранного"},
+                           text="text")
+        fig_donut.update_traces(textposition='outside')
         st.plotly_chart(fig_donut, use_container_width=True)
     else:
         st.info("Нет данных о выигранном объёме")
