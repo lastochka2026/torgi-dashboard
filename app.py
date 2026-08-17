@@ -287,7 +287,7 @@ def main():
         else:
             st.info("Нет данных для круговой диаграммы.")
 
-    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (исправленный тултип) ----------
+    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (без unified, но с полной сводкой) ----------
     st.subheader("📈 Динамика выигранного объёма по датам")
     if "Объем выигранный" in filtered.columns:
         won_over_time = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
@@ -323,10 +323,8 @@ def main():
                                barmode="stack",
                                color_discrete_map={"Дефицит": "#FF6B6B", "Основные": "#4ECDC4"}
                                )
-            # Включаем unified hover (один тултип на весь столбец)
-            fig_daily.update_layout(hovermode='x unified')
-            
-            # Передаём общую сводку в customdata
+            # Убираем hovermode='x unified', оставляем стандартный режим
+            # Каждый сегмент показывает полную сводку по дню
             fig_daily.update_traces(
                 hovertemplate="<b>%{x|%d.%m.%Y}</b><br>" +
                               "Общий объём: %{y:,.0f} кг<br>" +
