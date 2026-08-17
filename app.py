@@ -287,17 +287,15 @@ def main():
         else:
             st.info("Нет данных для круговой диаграммы.")
 
-    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (исправленная ошибка смещения РЦ) ----------
+    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (упрощённый, но с полной осью) ----------
     st.subheader("📈 Динамика выигранного объёма по датам")
     if "Объем выигранный" in filtered.columns:
         won_over_time = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
         if not won_over_time.empty:
-            # Группируем по дате и типу торгов (используем имя "Дата_торгов" для единообразия)
+            # Группируем по дате и типу торгов
             won_by_date_type = won_over_time.groupby(["Дата торгов", "Тип торгов"], as_index=False)["Объем выигранный"].sum()
-            # Переименуем "Дата торгов" в "Дата_торгов" для единообразия
-            won_by_date_type = won_by_date_type.rename(columns={"Дата торгов": "Дата_торгов"})
             # Преобразуем дату в datetime для сортировки
-            won_by_date_type["Дата"] = pd.to_datetime(won_by_date_type["Дата_торгов"], format="%d.%m.%Y")
+            won_by_date_type["Дата"] = pd.to_datetime(won_by_date_type["Дата торгов"], format="%d.%m.%Y")
             won_by_date_type = won_by_date_type.sort_values("Дата")
             
             # Определяем минимальную и максимальную дату в данных
@@ -320,7 +318,7 @@ def main():
             # Создаём столбец "Тип торгов" для цветовой разбивки
             # Для этого группируем по дате и типу
             won_by_date_type["Тип торгов"] = won_by_date_type["Тип торгов"].fillna("Основные")  # на случай NA
-            # Создаём полный DataFrame с типами (используем Дата_торгов для связи)
+            # Создаём полный DataFrame с типами
             full_with_types = full_df.merge(won_by_date_type[["Дата", "Тип торгов", "Объем выигранный"]], 
                                             on="Дата", how="left", suffixes=("", "_type"))
             # Заполняем NA в типах
@@ -334,21 +332,6 @@ def main():
                 all_dates_str = sorted(full_df["Дата_торгов"].unique(), key=lambda d: datetime.strptime(d, "%d.%m.%Y"))
                 dates_with_data = sorted(plot_data["Дата_торгов"].unique(), key=lambda d: datetime.strptime(d, "%d.%m.%Y"))
                 
-                # ---------- ИСПРАВЛЕНИЕ: создаём детали РЦ для каждой даты через merge ----------
-                # Группируем по дате, типу и РЦ (суммируем объём по каждому РЦ для каждого типа)
-                # Приводим "Дата торгов" к "Дата_торгов" для единообразия
-                won_over_time_renamed = won_over_time.rename(columns={"Дата торгов": "Дата_торгов"})
-                rc_grouped = won_over_time_renamed.groupby(["Дата_торгов", "Тип торгов", "РЦ"], as_index=False)["Объем выигранный"].sum()
-                # Для каждой даты и типа создаём строку с РЦ
-                rc_details = rc_grouped.groupby(["Дата_торгов", "Тип торгов"]).apply(
-                    lambda x: ", ".join([f"{row['РЦ']}: {row['Объем выигранный']:.0f} кг" for _, row in x.iterrows()])
-                ).reset_index(name="РЦ_детали")
-                # Присоединяем к plot_data по дате и типу (у plot_data есть Дата_торгов и Тип торгов)
-                plot_data = plot_data.merge(rc_details, on=["Дата_торгов", "Тип торгов"], how="left")
-                # Заполняем пропуски (если вдруг)
-                plot_data["РЦ_детали"] = plot_data["РЦ_детали"].fillna("")
-                # ---------- КОНЕЦ ИСПРАВЛЕНИЯ ----------
-                
                 # Строим график
                 fig_daily = px.bar(plot_data, 
                                    x="Дата_торгов", 
@@ -361,6 +344,16 @@ def main():
                                    category_orders={"Дата_торгов": all_dates_str}
                                    )
                 # Добавляем тултип с РЦ
+                rc_details = {}
+                for date in won_over_time["Дата торгов"].unique():
+                    df_day = won_over_time[won_over_time["Дата торгов"] == date]
+                    rc_summary = df_day.groupby(["РЦ", "Тип торгов"])["Объем выигранный"].sum().reset_index()
+                    lines = []
+                    for _, row in rc_summary.iterrows():
+                        lines.append(f"{row['РЦ']} ({row['Тип торгов']}): {row['Объем выигранный']:.0f} кг")
+                    rc_details[date] = "<br>".join(lines)
+                plot_data["РЦ_детали"] = plot_data["Дата_торгов"].map(rc_details)
+                
                 fig_daily.update_traces(
                     hovertemplate="<b>%{x}</b><br>" +
                                   "Тип: %{color}<br>" +
