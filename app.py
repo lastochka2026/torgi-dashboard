@@ -287,7 +287,7 @@ def main():
         else:
             st.info("Нет данных для круговой диаграммы.")
 
-    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (с разбивкой по типам и тултипом по РЦ) ----------
+    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (исправленная: все даты подписаны) ----------
     st.subheader("📈 Динамика выигранного объёма по датам")
     if "Объем выигранный" in filtered.columns:
         won_over_time = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
@@ -302,45 +302,48 @@ def main():
             rc_details = {}
             for date in won_over_time["Дата торгов"].unique():
                 df_day = won_over_time[won_over_time["Дата торгов"] == date]
-                # Группируем по РЦ и типу, чтобы показать в тултипе
                 rc_summary = df_day.groupby(["РЦ", "Тип торгов"])["Объем выигранный"].sum().reset_index()
                 lines = []
                 for _, row in rc_summary.iterrows():
                     lines.append(f"{row['РЦ']} ({row['Тип торгов']}): {row['Объем выигранный']:.0f} кг")
                 rc_details[date] = "<br>".join(lines)
             
-            # Добавляем колонку с текстом для тултипа (используем customdata)
             won_by_date_type["РЦ_детали"] = won_by_date_type["Дата торгов"].map(rc_details)
             
-            # Строим стековый график: по оси X – дата, по Y – объём, цвет – тип торгов
+            # Используем строковую дату для оси X, чтобы все даты подписались
+            # Строим график с категориальной осью X
             fig_daily = px.bar(won_by_date_type, 
-                               x="Дата", 
+                               x="Дата торгов",  # теперь это строка "дд.мм.гггг"
                                y="Объем выигранный", 
                                color="Тип торгов",
                                title="Выигранный объём по дням (с разбивкой по типам)",
                                labels={"Объем выигранный": "Выигранный объём (кг)"},
                                barmode="stack",
                                color_discrete_map={"Дефицит": "#FF6B6B", "Основные": "#4ECDC4"},
-                               custom_data=["РЦ_детали"]  # добавляем данные для тултипа
+                               custom_data=["РЦ_детали"],
+                               category_orders={"Дата торгов": sorted(won_by_date_type["Дата торгов"].unique(), 
+                                                                      key=lambda d: datetime.strptime(d, "%d.%m.%Y"))}
                                )
-            # Настраиваем тултип – показываем дату, тип, объём и РЦ
+            # Настраиваем тултип с РЦ
             fig_daily.update_traces(
-                hovertemplate="<b>%{x|%d.%m.%Y}</b><br>" +
+                hovertemplate="<b>%{x}</b><br>" +
                               "Тип: %{color}<br>" +
                               "Объём: %{y:,.0f} кг<br>" +
                               "<b>РЦ:</b><br>%{customdata[0]}<extra></extra>"
             )
             # Добавляем общие подписи над столбцами (суммарный объём за день)
-            total_by_date = won_by_date_type.groupby("Дата")["Объем выигранный"].sum().reset_index()
+            total_by_date = won_by_date_type.groupby("Дата торгов")["Объем выигранный"].sum().reset_index()
             for i, row in total_by_date.iterrows():
                 fig_daily.add_annotation(
-                    x=row["Дата"],
+                    x=row["Дата торгов"],
                     y=row["Объем выигранный"],
                     text=f"{row['Объем выигранный']:.0f} кг",
                     showarrow=False,
                     font=dict(size=10, color="black"),
                     yshift=5
                 )
+            # Поворачиваем подписи на 45 градусов для читаемости (если дат много)
+            fig_daily.update_xaxes(tickangle=45)
             
             st.plotly_chart(fig_daily, use_container_width=True)
         else:
