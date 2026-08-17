@@ -273,26 +273,21 @@ def main():
             st.info("Нет данных о выигранном объёме")
 
     with col2:
-        # Круговая диаграмма: распределение ВЫИГРАННОГО объёма по типу торгов (исправлено!)
-        if "Объем выигранный" in filtered.columns:
-            # Отбираем только строки с положительным выигранным объёмом
-            won_data = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
-            if not won_data.empty:
-                type_vol = won_data.groupby("Тип торгов")["Объем выигранный"].sum().reset_index()
-                fig_pie = px.pie(type_vol, 
-                                 names="Тип торгов", 
-                                 values="Объем выигранный",
-                                 title="Распределение ВЫИГРАННОГО объёма по типу торгов",
-                                 hole=0.3)
-                fig_pie.update_traces(texttemplate='%{label}<br>%{percent} (%{value:,.0f} кг)', 
-                                      textposition='inside')
-                st.plotly_chart(fig_pie, use_container_width=True)
-            else:
-                st.info("Нет выигранных позиций для круговой диаграммы.")
+        # Круговая диаграмма: распределение ОБЩЕГО объёма по типу торгов (исправлено)
+        type_vol = filtered.groupby("Тип торгов")["Объем"].sum().reset_index()
+        if not type_vol.empty:
+            fig_pie = px.pie(type_vol, 
+                             names="Тип торгов", 
+                             values="Объем",
+                             title="Распределение объёма по типу торгов",
+                             hole=0.3)
+            fig_pie.update_traces(texttemplate='%{label}<br>%{percent} (%{value:,.0f} кг)', 
+                                  textposition='inside')
+            st.plotly_chart(fig_pie, use_container_width=True)
         else:
-            st.info("Нет данных о выигранном объёме")
+            st.info("Нет данных для круговой диаграммы.")
 
-    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (упрощённая, без дублей) ----------
+    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (упрощённая, без РЦ в тултипе) ----------
     st.subheader("📈 Динамика выигранного объёма по датам")
     if "Объем выигранный" in filtered.columns:
         won_over_time = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
@@ -317,23 +312,11 @@ def main():
                                color_discrete_map={"Дефицит": "#FF6B6B", "Основные": "#4ECDC4"},
                                category_orders={"Дата торгов": all_dates}
                                )
-            # Добавляем тултип с РЦ
-            rc_details = {}
-            for date in won_over_time["Дата торгов"].unique():
-                df_day = won_over_time[won_over_time["Дата торгов"] == date]
-                rc_summary = df_day.groupby(["РЦ", "Тип торгов"])["Объем выигранный"].sum().reset_index()
-                lines = []
-                for _, row in rc_summary.iterrows():
-                    lines.append(f"{row['РЦ']} ({row['Тип торгов']}): {row['Объем выигранный']:.0f} кг")
-                rc_details[date] = "<br>".join(lines)
-            won_by_date_type["РЦ_детали"] = won_by_date_type["Дата торгов"].map(rc_details)
-            
+            # Тултип без РЦ (только дата, тип, объём)
             fig_daily.update_traces(
                 hovertemplate="<b>%{x}</b><br>" +
                               "Тип: %{color}<br>" +
-                              "Объём: %{y:,.0f} кг<br>" +
-                              "<b>РЦ:</b><br>%{customdata[0]}<extra></extra>",
-                customdata=won_by_date_type[["РЦ_детали"]].values
+                              "Объём: %{y:,.0f} кг<extra></extra>"
             )
             # Подписи над столбцами (суммарный выигранный объём за день)
             total_by_date = won_by_date_type.groupby("Дата торгов")["Объем выигранный"].sum().reset_index()
