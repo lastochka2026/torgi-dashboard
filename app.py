@@ -274,11 +274,18 @@ def main():
 
     with col2:
         # Круговая диаграмма: распределение объёма по типу торгов
+        # Теперь с отображением и процентов, и абсолютных значений
         type_vol = filtered.groupby("Тип торгов").agg({"Объем": "sum"}).reset_index()
         if not type_vol.empty:
-            fig_pie = px.pie(type_vol, names="Тип торгов", values="Объем",
+            fig_pie = px.pie(type_vol, 
+                             names="Тип торгов", 
+                             values="Объем",
                              title="Распределение объёма по типу торгов",
-                             hole=0.3)
+                             hole=0.3,
+                             textinfo='label+percent+value',  # <-- добавлено
+                             hover_data={'Объем': ':,.0f'})   # формат при наведении
+            # Настроим отображение чисел в тексте (можно убрать десятичные)
+            fig_pie.update_traces(texttemplate='%{label}<br>%{percent} (%{value:,.0f} кг)')
             st.plotly_chart(fig_pie, use_container_width=True)
         else:
             st.info("Нет данных для круговой диаграммы.")
@@ -289,7 +296,6 @@ def main():
         st.subheader("Доля выигранного объёма по РЦ")
         vol_rc = filtered.groupby("РЦ").agg({"Объем": "sum", "Объем выигранный": "sum"}).reset_index()
         vol_rc["Доля выигранного"] = (vol_rc["Объем выигранный"] / vol_rc["Объем"]) * 100
-        # Создаём текстовые метки с процентом и абсолютным значением
         vol_rc["text"] = vol_rc.apply(
             lambda row: f"{row['Доля выигранного']:.1f}%\n{row['Объем выигранный']:.0f} кг", 
             axis=1
