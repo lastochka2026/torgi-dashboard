@@ -292,7 +292,7 @@ def main():
     if "Объем выигранный" in filtered.columns:
         won_over_time = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
         if not won_over_time.empty:
-            # Группируем по дате и типу торгов
+            # Группируем по дате и типу торгов для столбцов
             won_by_date_type = won_over_time.groupby(["Дата торгов", "Тип торгов"], as_index=False)["Объем выигранный"].sum()
             # Преобразуем дату в datetime для сортировки
             won_by_date_type["Дата"] = pd.to_datetime(won_by_date_type["Дата торгов"], format="%d.%m.%Y")
@@ -301,7 +301,21 @@ def main():
             # Определяем все уникальные даты в данных (только те, где есть выигранный объём)
             all_dates = sorted(won_by_date_type["Дата торгов"].unique(), key=lambda d: datetime.strptime(d, "%d.%m.%Y"))
             
-            # Строим стековый график только по дням с данными
+            # ---------- ИСПРАВЛЕНИЕ: создаём словарь деталей РЦ по (дата, тип) ----------
+            rc_dict = {}
+            for (date, trade_type), group in won_over_time.groupby(["Дата торгов", "Тип торгов"]):
+                # Группируем внутри по РЦ и суммируем
+                rc_summary = group.groupby("РЦ")["Объем выигранный"].sum().reset_index()
+                lines = [f"{row['РЦ']}: {row['Объем выигранный']:.0f} кг" for _, row in rc_summary.iterrows()]
+                rc_dict[(date, trade_type)] = ", ".join(lines)
+            
+            # Применяем словарь к каждой строке
+            won_by_date_type["РЦ_детали"] = won_by_date_type.apply(
+                lambda row: rc_dict.get((row["Дата торгов"], row["Тип торгов"]), ""), axis=1
+            )
+            # ---------- КОНЕЦ ИСПРАВЛЕНИЯ ----------
+            
+            # Строим стековый график
             fig_daily = px.bar(won_by_date_type, 
                                x="Дата торгов", 
                                y="Объем выигранный", 
@@ -312,18 +326,6 @@ def main():
                                color_discrete_map={"Дефицит": "#FF6B6B", "Основные": "#4ECDC4"},
                                category_orders={"Дата торгов": all_dates}
                                )
-            
-            # ---------- ИСПРАВЛЕНИЕ ТУЛТИПА: используем merge вместо map ----------
-            # Сначала группируем по дате и типу, чтобы получить строку с РЦ для каждого типа
-            rc_grouped = won_over_time.groupby(["Дата торгов", "Тип торгов", "РЦ"], as_index=False)["Объем выигранный"].sum()
-            rc_details = rc_grouped.groupby(["Дата торгов", "Тип торгов"]).apply(
-                lambda x: ", ".join([f"{row['РЦ']}: {row['Объем выигранный']:.0f} кг" for _, row in x.iterrows()])
-            ).reset_index(name="РЦ_детали")
-            
-            # Присоединяем к основному датафрейму
-            won_by_date_type = won_by_date_type.merge(rc_details, on=["Дата торгов", "Тип торгов"], how="left")
-            won_by_date_type["РЦ_детали"] = won_by_date_type["РЦ_детали"].fillna("")
-            # ---------- КОНЕЦ ИСПРАВЛЕНИЯ ----------
             
             fig_daily.update_traces(
                 hovertemplate="<b>%{x}</b><br>" +
@@ -343,7 +345,6 @@ def main():
                     font=dict(size=10, color="black"),
                     yshift=5
                 )
-            # Настройка оси X: показываем только даты с данными
             fig_daily.update_xaxes(tickangle=45)
             st.plotly_chart(fig_daily, use_container_width=True)
         else:
