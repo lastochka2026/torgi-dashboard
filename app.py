@@ -287,12 +287,12 @@ def main():
         else:
             st.info("Нет данных для круговой диаграммы.")
 
-    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (общий тултип на весь столбец) ----------
+    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (исправленная ошибка смещения РЦ) ----------
     st.subheader("📈 Динамика выигранного объёма по датам")
     if "Объем выигранный" in filtered.columns:
         won_over_time = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
         if not won_over_time.empty:
-            # 1. Определяем диапазон дат от min до max по всем данным (не только выигранным)
+            # 1. Определяем полный диапазон дат по всем данным (не только выигранным)
             all_dates_series = pd.to_datetime(filtered["Дата торгов"], format="%d.%m.%Y", errors="coerce")
             min_date_full = all_dates_series.min()
             max_date_full = all_dates_series.max()
@@ -300,33 +300,33 @@ def main():
             full_dates_df = pd.DataFrame({"Дата": date_range_full})
             full_dates_df["Дата_торгов"] = full_dates_df["Дата"].dt.strftime("%d.%m.%Y")
             
-            # 2. Группируем выигранные объёмы по дате, типу и РЦ (суммируем)
+            # 2. Группируем выигранные объёмы по дате, типу и РЦ (суммируем по каждому РЦ)
             won_grouped = won_over_time.groupby(["Дата торгов", "Тип торгов", "РЦ"], as_index=False)["Объем выигранный"].sum()
             
-            # 3. Создаём общую сводку по дню: все РЦ и типы в одной строке
-            # Сначала группируем по дате и типу, чтобы получить строки вида "РЦ: кг"
+            # 3. Создаём сводку по дню для тултипа: группируем по дате, внутри по типу и РЦ
+            # Сначала для каждого типа и даты собираем строку с РЦ
             type_summary = won_grouped.groupby(["Дата торгов", "Тип торгов"]).apply(
                 lambda x: ", ".join([f"{row['РЦ']}: {row['Объем выигранный']:.0f} кг" for _, row in x.iterrows()])
             ).reset_index(name="type_rc")
-            # Теперь объединяем по дате: для каждой даты строка с дефицитом и основными
+            # Теперь объединяем по дате все типы в одну строку
             day_full = type_summary.groupby("Дата торгов").apply(
                 lambda x: "; ".join([f"{row['Тип торгов']}: {row['type_rc']}" for _, row in x.iterrows()])
             ).reset_index(name="day_rc_details")
             
-            # 4. Группируем по дате и типу для столбцов (сумма по всем РЦ)
+            # 4. Группируем по дате и типу для столбцов (сумма по всем РЦ для каждого типа)
             won_by_date_type = won_grouped.groupby(["Дата торгов", "Тип торгов"], as_index=False)["Объем выигранный"].sum()
             won_by_date_type["Дата"] = pd.to_datetime(won_by_date_type["Дата торгов"], format="%d.%m.%Y")
             won_by_date_type = won_by_date_type.sort_values("Дата")
             
-            # 5. Добавляем общую сводку по дню в каждую строку (для всех типов одинаковую)
+            # 5. Добавляем общую сводку по дню в данные для графика (одинаковую для всех типов)
             plot_data = won_by_date_type.merge(day_full, on="Дата торгов", how="left")
             
-            # 6. Создаём полный набор дат (для оси)
+            # 6. Подготавливаем список всех дат для оси
             all_dates_str = full_dates_df["Дата_торгов"].tolist()
             all_dates_str_sorted = sorted(all_dates_str, key=lambda d: datetime.strptime(d, "%d.%m.%Y"))
             dates_with_data = sorted(plot_data["Дата торгов"].unique(), key=lambda d: datetime.strptime(d, "%d.%m.%Y"))
             
-            # 7. Строим график
+            # 7. Строим стековый график
             fig_daily = px.bar(plot_data, 
                                x="Дата торгов", 
                                y="Объем выигранный", 
@@ -338,15 +338,15 @@ def main():
                                category_orders={"Дата торгов": all_dates_str_sorted},
                                custom_data=["day_rc_details"]
                                )
-            # Включаем unified hover (показывает все трассы для одной даты)
+            # Включаем unified hover – один тултип на весь столбец
             fig_daily.update_layout(hovermode='x unified')
             
-            # Вычисляем общий объём за день для тултипа
+            # Вычисляем общий объём за день для отображения в тултипе
             total_by_date = plot_data.groupby("Дата торгов")["Объем выигранный"].sum().reset_index()
             total_dict = dict(zip(total_by_date["Дата торгов"], total_by_date["Объем выигранный"]))
             plot_data["total_day"] = plot_data["Дата торгов"].map(total_dict)
             
-            # Обновляем трассы с новым customdata, включающим сводку и общий объём
+            # Обновляем трассы с новым customdata (сводка по дню и общий объём)
             fig_daily.update_traces(
                 customdata=plot_data[["day_rc_details", "total_day"]].values,
                 hovertemplate="<b>%{x}</b><br>" +
@@ -354,7 +354,7 @@ def main():
                               "%{customdata[0]}<extra></extra>"
             )
             
-            # Подписи над столбцами (сумма за день по всем типам)
+            # Подписи над столбцами (суммарный объём за день)
             for _, row in total_by_date.iterrows():
                 fig_daily.add_annotation(
                     x=row["Дата торгов"],
@@ -364,7 +364,7 @@ def main():
                     font=dict(size=10, color="black"),
                     yshift=5
                 )
-            # Настройка оси: все даты, но подписи только для дней с данными
+            # Настройка оси: все даты, подписи только для дней с данными
             fig_daily.update_xaxes(
                 tickvals=all_dates_str_sorted,
                 ticktext=[d if d in dates_with_data else "" for d in all_dates_str_sorted],
