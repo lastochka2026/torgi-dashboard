@@ -274,18 +274,16 @@ def main():
 
     with col2:
         # Круговая диаграмма: распределение объёма по типу торгов
-        # Теперь с отображением и процентов, и абсолютных значений
         type_vol = filtered.groupby("Тип торгов").agg({"Объем": "sum"}).reset_index()
         if not type_vol.empty:
             fig_pie = px.pie(type_vol, 
                              names="Тип торгов", 
                              values="Объем",
                              title="Распределение объёма по типу торгов",
-                             hole=0.3,
-                             textinfo='label+percent+value',  # <-- добавлено
-                             hover_data={'Объем': ':,.0f'})   # формат при наведении
-            # Настроим отображение чисел в тексте (можно убрать десятичные)
-            fig_pie.update_traces(texttemplate='%{label}<br>%{percent} (%{value:,.0f} кг)')
+                             hole=0.3)
+            # Добавляем текст с процентами и абсолютными значениями
+            fig_pie.update_traces(texttemplate='%{label}<br>%{percent} (%{value:,.0f} кг)', 
+                                  textposition='inside')
             st.plotly_chart(fig_pie, use_container_width=True)
         else:
             st.info("Нет данных для круговой диаграммы.")
