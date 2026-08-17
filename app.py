@@ -287,7 +287,7 @@ def main():
         else:
             st.info("Нет данных для круговой диаграммы.")
 
-    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (исправленный тултип с РЦ) ----------
+        # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (исправленный тултип с РЦ, сгруппированный) ----------
     st.subheader("📈 Динамика выигранного объёма по датам")
     if "Объем выигранный" in filtered.columns:
         won_over_time = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
@@ -297,14 +297,18 @@ def main():
             won_by_date_type["Дата"] = pd.to_datetime(won_by_date_type["Дата торгов"], format="%d.%m.%Y")
             won_by_date_type = won_by_date_type.sort_values("Дата")
             
-            # Создаём детали по РЦ для каждой даты (все РЦ и типы)
-            rc_details_df = won_over_time.groupby("Дата торгов").apply(
+            # Создаём детали по РЦ для каждой даты, группируя по РЦ и типу
+            rc_details_df = won_over_time.groupby(["Дата торгов", "РЦ", "Тип торгов"]).agg(
+                {"Объем выигранный": "sum"}
+            ).reset_index()
+            # Теперь для каждой даты собираем строки вида "РЦ (Тип): объём"
+            rc_details_agg = rc_details_df.groupby("Дата торгов").apply(
                 lambda x: ", ".join([f"{row['РЦ']} ({row['Тип торгов']}): {row['Объем выигранный']:.0f} кг" 
                                       for _, row in x.iterrows()])
             ).reset_index(name="РЦ_детали")
             
             # Объединяем с данными для графика
-            plot_data = won_by_date_type.merge(rc_details_df, on="Дата торгов", how="left")
+            plot_data = won_by_date_type.merge(rc_details_agg, on="Дата торгов", how="left")
             
             # Все даты с данными (для порядка на оси)
             all_dates = sorted(plot_data["Дата торгов"].unique(), key=lambda d: datetime.strptime(d, "%d.%m.%Y"))
