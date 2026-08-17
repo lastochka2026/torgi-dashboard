@@ -287,17 +287,17 @@ def main():
         else:
             st.info("Нет данных для круговой диаграммы.")
 
-    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (финальная, с ручным построением) ----------
+    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (с таблицей отладки) ----------
     st.subheader("📈 Динамика выигранного объёма по датам")
     if "Объем выигранный" in filtered.columns:
         won_over_time = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
         if not won_over_time.empty:
-            # Группируем по дате, типу и суммируем объём (для столбцов)
+            # Группируем по дате и типу
             won_grouped = won_over_time.groupby(["Дата торгов", "Тип торгов"], as_index=False)["Объем выигранный"].sum()
             won_grouped["Дата"] = pd.to_datetime(won_grouped["Дата торгов"], format="%d.%m.%Y")
             won_grouped = won_grouped.sort_values("Дата")
             
-            # Создаём полную сводку по дню для тултипа (все типы и РЦ)
+            # Формируем полную сводку по дню
             day_summary = {}
             for date in won_over_time["Дата торгов"].unique():
                 df_day = won_over_time[won_over_time["Дата торгов"] == date]
@@ -309,10 +309,14 @@ def main():
                     summary_parts.append(f"{trade_type}: {rc_str}")
                 day_summary[date] = "; ".join(summary_parts)
             
-            # Создаём общий DataFrame с customdata для всех точек
             won_grouped["day_rc"] = won_grouped["Дата торгов"].map(day_summary)
             
-            # Строим график вручную через go.Figure
+            # ---- ОТЛАДКА: показываем таблицу с customdata ----
+            st.subheader("🔍 Отладочная таблица (данные для тултипа)")
+            st.dataframe(won_grouped[["Дата торгов", "Тип торгов", "Объем выигранный", "day_rc"]])
+            st.write("Проверьте, что для одной даты day_rc одинаковый для всех типов.")
+            
+            # Строим график через go.Figure (без unified hover)
             fig_daily = go.Figure()
             colors = {"Дефицит": "#FF6B6B", "Основные": "#4ECDC4"}
             
@@ -325,22 +329,21 @@ def main():
                     marker_color=colors.get(t, "#888"),
                     customdata=df_t["day_rc"],
                     hovertemplate="<b>%{x|%d.%m.%Y}</b><br>" +
-                                  "Общий объём: %{y:,.0f} кг<br>" +
+                                  "Тип: %{color}<br>" +
+                                  "Объём: %{y:,.0f} кг<br>" +
                                   "%{customdata}<extra></extra>"
                 ))
             
-            # Настройка layout
             fig_daily.update_layout(
                 barmode='stack',
                 title="Выигранный объём по дням (с разбивкой по типам)",
                 xaxis_title="Дата торгов",
                 yaxis_title="Выигранный объём (кг)",
-                hovermode='x unified',
                 legend_title="Тип торгов"
             )
             fig_daily.update_xaxes(tickformat="%d.%m.%Y", tickangle=45)
             
-            # Подписи над столбцами
+            # Подписи
             total_by_date = won_grouped.groupby("Дата")["Объем выигранный"].sum().reset_index()
             for _, row in total_by_date.iterrows():
                 fig_daily.add_annotation(
