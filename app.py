@@ -287,17 +287,25 @@ def main():
         else:
             st.info("Нет данных для круговой диаграммы.")
 
-    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (с таблицей отладки) ----------
+    # ---------- ДИНАМИКА ВЫИГРАННОГО ОБЪЁМА ПО ДАТАМ (финальный: полная ось, без спайков) ----------
     st.subheader("📈 Динамика выигранного объёма по датам")
     if "Объем выигранный" in filtered.columns:
         won_over_time = filtered[filtered["Объем выигранный"].notna() & (filtered["Объем выигранный"] > 0)]
         if not won_over_time.empty:
-            # Группируем по дате и типу
+            # 1. Определяем полный диапазон дат по всем данным (не только выигранным)
+            all_dates_series = pd.to_datetime(filtered["Дата торгов"], format="%d.%m.%Y", errors="coerce")
+            min_date_full = all_dates_series.min()
+            max_date_full = all_dates_series.max()
+            date_range_full = pd.date_range(start=min_date_full, end=max_date_full, freq='D')
+            full_dates_df = pd.DataFrame({"Дата": date_range_full})
+            full_dates_df["Дата_торгов"] = full_dates_df["Дата"].dt.strftime("%d.%m.%Y")
+            
+            # 2. Группируем данные по дате и типу (для столбцов)
             won_grouped = won_over_time.groupby(["Дата торгов", "Тип торгов"], as_index=False)["Объем выигранный"].sum()
             won_grouped["Дата"] = pd.to_datetime(won_grouped["Дата торгов"], format="%d.%m.%Y")
             won_grouped = won_grouped.sort_values("Дата")
             
-            # Формируем полную сводку по дню
+            # 3. Создаём полную сводку по дню для тултипа
             day_summary = {}
             for date in won_over_time["Дата торгов"].unique():
                 df_day = won_over_time[won_over_time["Дата торгов"] == date]
@@ -311,12 +319,12 @@ def main():
             
             won_grouped["day_rc"] = won_grouped["Дата торгов"].map(day_summary)
             
-            # ---- ОТЛАДКА: показываем таблицу с customdata ----
-            st.subheader("🔍 Отладочная таблица (данные для тултипа)")
-            st.dataframe(won_grouped[["Дата торгов", "Тип торгов", "Объем выигранный", "day_rc"]])
-            st.write("Проверьте, что для одной даты day_rc одинаковый для всех типов.")
+            # 4. Полный список дат для оси и даты с данными
+            all_dates_str = full_dates_df["Дата_торгов"].tolist()
+            all_dates_str_sorted = sorted(all_dates_str, key=lambda d: datetime.strptime(d, "%d.%m.%Y"))
+            dates_with_data = sorted(won_grouped["Дата торгов"].unique(), key=lambda d: datetime.strptime(d, "%d.%m.%Y"))
             
-            # Строим график через go.Figure (без unified hover)
+            # 5. Строим график через go.Figure (ручное управление)
             fig_daily = go.Figure()
             colors = {"Дефицит": "#FF6B6B", "Основные": "#4ECDC4"}
             
@@ -329,21 +337,35 @@ def main():
                     marker_color=colors.get(t, "#888"),
                     customdata=df_t["day_rc"],
                     hovertemplate="<b>%{x|%d.%m.%Y}</b><br>" +
-                                  "Тип: %{color}<br>" +
-                                  "Объём: %{y:,.0f} кг<br>" +
+                                  "Общий объём: %{y:,.0f} кг<br>" +
                                   "%{customdata}<extra></extra>"
                 ))
             
+            # 6. Настройка оси X: все даты, но подписи только для дней с данными
+            # Создаём словарь для ticktext: для дат с данными – текст, для остальных – пустая строка
+            ticktext_map = {d: d if d in dates_with_data else "" for d in all_dates_str_sorted}
+            ticktext = [ticktext_map[d] for d in all_dates_str_sorted]
+            
+            fig_daily.update_xaxes(
+                tickvals=all_dates_str_sorted,  # все даты
+                ticktext=ticktext,              # подписи только для дней с данными
+                tickformat="%d.%m.%Y",          # формат (но он будет переопределён ticktext)
+                tickangle=45,
+                showspikes=False                # убираем вертикальную линию
+            )
+            # Убираем спайки на всей фигуре
             fig_daily.update_layout(
                 barmode='stack',
                 title="Выигранный объём по дням (с разбивкой по типам)",
                 xaxis_title="Дата торгов",
                 yaxis_title="Выигранный объём (кг)",
-                legend_title="Тип торгов"
+                legend_title="Тип торгов",
+                hovermode='x',                  # показывает тултип для всех точек по x, но без спайка
+                xaxis=dict(showspikes=False),   # дополнительно отключаем спайки
+                yaxis=dict(showspikes=False)
             )
-            fig_daily.update_xaxes(tickformat="%d.%m.%Y", tickangle=45)
             
-            # Подписи
+            # 7. Подписи над столбцами (общий объём за день)
             total_by_date = won_grouped.groupby("Дата")["Объем выигранный"].sum().reset_index()
             for _, row in total_by_date.iterrows():
                 fig_daily.add_annotation(
@@ -354,6 +376,7 @@ def main():
                     font=dict(size=10, color="black"),
                     yshift=5
                 )
+            
             st.plotly_chart(fig_daily, use_container_width=True)
         else:
             st.info("Нет выигранных позиций для отображения динамики по датам.")
